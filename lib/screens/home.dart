@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:intl/intl.dart';
 import 'package:namer_app/provider/paymet_provider.dart';
 import 'package:namer_app/screens/add_payment.dart';
 import 'package:namer_app/screens/manage_services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:namer_app/database/datebase_helper.dart';
 //import 'package:flutter/cupertino.dart';
 
 
@@ -16,13 +18,31 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
 
   late PaymentProvder paymentProvder;
+  late DatabaseHelper databaseHelper;
 
 @override
-  void initState() {
-paymentProvder =  Provider.of<PaymentProvder>(context, listen: false);
+void initState() {
+  super.initState();
+  paymentProvder = Provider.of<PaymentProvder>(context, listen: false);
+  databaseHelper = DatabaseHelper();
+  loadServices();
+}
 
-    super.initState();
-  }
+void loadServices() async {
+
+  final serviceList = await DatabaseHelper().getServices();
+  setState(() {
+    paymentProvder.serviceList = serviceList.map((service) {
+      return Service(
+        bill: service.bill,
+        provider: service.provider,
+        amount: service.amount,
+        dueDate: DateTime.parse(service.dueDate.toString()),
+      );
+    }).toList();
+  });
+}
+
  getservices () async{
   final SharedPreferences prefs = await SharedPreferences.getInstance();
 
@@ -80,24 +100,28 @@ paymentProvder =  Provider.of<PaymentProvder>(context, listen: false);
                 ),
                 SizedBox(height: 10),
                 Expanded(
-                  
-                  child: Scrollbar(
+  child: Scrollbar(
+    child: ListView.builder(
+      itemCount: paymentProvder.serviceList.length,
+      itemBuilder: (context, index) {
+        final service = paymentProvder.serviceList[index];
+        String formattedDate = DateFormat('yyyy-MM-dd').format(service.dueDate);
+        return Padding(
+          padding: EdgeInsets.symmetric(vertical: 5),
+          child: ServiceCard(
+            id: service.id,
+            databaseHelper: databaseHelper,
+            provider: service.provider,
+            amount: service.amount,
+            dueDate: formattedDate,
+            isDueSoon: service.dueDate.isBefore(DateTime.now().add(Duration(days: 3))),
+          ),
+        );
+      },
+    ),
+  ),
+),
 
-                    child: ListView.builder(
-                                    
-                    itemCount:paymentProvder.serviceList.length ,
-                    itemBuilder:(context,index){
-                    final payment = paymentProvder.serviceList[index];
-                        String formatdate =  DateFormat('yyyy-MM-dd').format(payment.dueDate);
-                              
-                        return Padding(
-                          padding: EdgeInsets.symmetric(vertical: 5),
-                          child: PaymentCard(provider: payment.provider, amount: payment.amount, paymentDate: formatdate, note: ""));
-                      } ,
-                                    
-                    ),
-                  ),
-                ),
                 SizedBox(height: 20),
           
                 // Sección de Pagos Recientes
@@ -130,9 +154,13 @@ paymentProvder =  Provider.of<PaymentProvder>(context, listen: false);
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          Navigator.push(context, MaterialPageRoute(builder: (_) => AddPaymentScreen())).then((value) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => ManageServicesScreen()),
+          ).then((_) {
+            loadServices(); //Recarga los servicios cuando regrese al dashboard
             setState(() {
-              
+          
             });
           });
           // Navegar a la pantalla de Administración de Servicios
@@ -145,27 +173,65 @@ paymentProvder =  Provider.of<PaymentProvder>(context, listen: false);
 
 // Widget personalizado para los servicios pendientes
 class ServiceCard extends StatelessWidget {
+  final int? id;
   final String provider;
   final double amount;
   final String dueDate;
   final bool isDueSoon;
+  final DatabaseHelper databaseHelper;
 
   const ServiceCard({
+    required this.id,
     required this.provider,
     required this.amount,
     required this.dueDate,
     required this.isDueSoon,
+    required this.databaseHelper
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      color: isDueSoon ? Colors.redAccent.shade100 : Colors.greenAccent.shade100,
-      child: ListTile(
-        title: Text(provider),
-        subtitle: Text("Vencimiento: $dueDate"),
-        trailing: Text("\$$amount",
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+    return Slidable(
+      key: const ValueKey(0),
+
+      endActionPane: ActionPane(
+
+        motion: const ScrollMotion(),
+        dismissible: DismissiblePane(onDismissed: (){}), 
+        children:  [
+                SlidableAction(
+           
+            borderRadius: BorderRadius.circular(20),
+            backgroundColor:(Colors.purple),
+            foregroundColor: Colors.grey,
+            icon: Icons.edit,
+            label: 'Edit',
+            onPressed:(context,)async{
+              await databaseHelper.deleteService(id!);
+         }),
+       
+          SlidableAction(
+              
+            borderRadius: BorderRadius.circular(20),
+            backgroundColor: 
+            Color(0xFFFE4A49),
+            foregroundColor: Colors.grey,
+            icon: Icons.delete,
+            label: 'Delete',
+            onPressed:(context,){
+         }),
+        
+        
+        ] ),
+
+      child: Card(
+        color: isDueSoon ? Colors.redAccent.shade100 : Colors.greenAccent.shade100,
+        child: ListTile(
+          title: Text(provider),
+          subtitle: Text("Vencimiento: $dueDate"),
+          trailing: Text("\$$amount",
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        ),
       ),
     );
   }
